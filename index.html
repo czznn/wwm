@@ -431,7 +431,52 @@ body.alarm #scanner{background:#7a1010}
       </div>
       <button onclick="clearAllStock()" style="position:absolute;right:16px;bottom:10px;border:none;background:rgba(217,72,72,.9);color:#fff;padding:6px 14px;border-radius:14px;font-size:12px;font-weight:700;cursor:pointer">清库存</button>
     </div>
-    <div class="card" style="margin-top:14px" id="matList"></div>
+    <div style="display:flex;gap:8px;margin:14px 0 10px">
+      <button id="tabMatList" onclick="switchMatTab('list')" style="flex:1;padding:10px;border:none;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer">物料管理</button>
+      <button id="tabMatNew" onclick="switchMatTab('new')" style="flex:1;padding:10px;border:none;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer">新增物料</button>
+      <button id="tabMatUpd" onclick="switchMatTab('upd')" style="flex:1;padding:10px;border:none;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer">物料更新</button>
+    </div>
+    <div id="matListPane">
+      <div class="card" id="matList"></div>
+    </div>
+    <div id="matNewPane" style="display:none">
+      <div class="card">
+        <div class="field"><label>完整标签（粘贴，或点摄像头扫描）</label>
+          <textarea id="newScanInput" rows="2" placeholder="1000003059748$10005210$4100155729$43A3CHHR2772E$150" style="resize:vertical"></textarea>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button class="btn btn-primary" style="flex:1;padding:12px" onclick="parseNewScan()">解析标签</button>
+            <button class="btn btn-primary" style="flex:1;padding:12px" onclick="openScanner('newmat')">摄像头扫码</button>
+          </div>
+        </div>
+        <div class="field"><label>物料图号（解析带出，可修改）</label><input id="nmMatNo" placeholder="如 43A3CHHR2772E"></div>
+        <div id="nmVendorHint" style="font-size:11px;color:var(--brand);margin-bottom:8px"></div>
+        <div class="field"><label>物料名称（必填）</label><input id="nmMatDesc" placeholder="如 微动开关组件"></div>
+        <div class="field"><label>厂家（已有可下拉选，新厂家直接输入）</label><input id="nmVendor" list="vendorList" placeholder="选择或输入厂家名称"><datalist id="vendorList"></datalist></div>
+        <div class="field"><label>库位</label><select id="nmLocation"></select></div>
+        <div class="field"><label>关联型号（勾选后保存即挂入对应型号 BOM，可不选）</label>
+          <div id="nmModelChecks" style="display:flex;flex-direction:column;gap:8px;margin-top:4px"></div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;padding:14px;font-size:16px;font-weight:700;margin-top:8px" onclick="saveNewMaterial()">保存写入物料库</button>
+      </div>
+    </div>
+    <div id="matUpdPane" style="display:none">
+      <div id="updPicker"></div>
+      <div id="updForm" style="display:none">
+        <div class="card">
+          <button class="btn btn-ghost" onclick="backToUpdPicker()" style="margin-bottom:10px">← 返回选择</button>
+          <div class="field"><label>扫码完整标签更新厂家编号/名称</label>
+            <input id="updScanInput" placeholder="扫码或粘贴完整标签" onkeydown="if(event.key==='Enter'){parseUpdScan();}">
+            <button class="btn btn-ghost" style="margin-top:8px" onclick="openScanner('updmat')">打开摄像头扫码</button>
+          </div>
+          <div class="field"><label>物料图号（扫码自动更新，可修改）</label><input id="updMatNo"></div>
+          <div id="updVendorHint" style="font-size:11px;color:var(--brand);margin-bottom:8px"></div>
+          <div class="field"><label>物料名称</label><input id="updMatDesc"></div>
+          <div class="field"><label>厂家</label><input id="updVendor" list="vendorList"></div>
+          <div class="field"><label>库位</label><select id="updLocation"></select></div>
+          <button class="btn btn-primary" onclick="saveUpdateMaterial()">保存更新</button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ============ 视图：厂家管理 ============ -->
@@ -535,7 +580,7 @@ body.alarm #scanner{background:#7a1010}
 
 <!-- ===== 全屏扫码 ===== -->
 <div id="scanner" style="display:none;position:fixed;inset:0;background:#000;z-index:200;flex-direction:column">
-  <div style="position:relative;height:52%;background:#000;overflow:hidden">
+  <div style="position:relative;height:38%;background:#000;overflow:hidden">
     <video id="scVideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover"></video>
     <div style="position:absolute;top:0;left:0;right:0;padding:46px 20px 40px;background:linear-gradient(rgba(0,0,0,.7),transparent);color:#fff;text-align:center">
       <div style="font-size:16px;font-weight:700" id="scTitle">对准二维码 / 条码</div>
@@ -657,6 +702,15 @@ if(!DB.soundBeep) DB.soundBeep='classic';
 if(!DB.soundAlarm) DB.soundAlarm='continuous';
   if(DB.soundAlarm==='siren'||DB.soundAlarm==='dual') DB.soundAlarm='continuous';
 if(!DB.vendorCodeMap) DB.vendorCodeMap={};
+if(!DB.hiddenModels) DB.hiddenModels={};
+function isModelHidden(modelNo){ return !!(DB.hiddenModels && DB.hiddenModels[modelNo]); }
+// 物料仅被隐藏型号独占关联时才隐藏；独立物料或仍被显示型号关联则不隐藏
+function isMatFullyHidden(matNo){
+  const rel=DB.models.filter(m=>m.items.includes(matNo));
+  if(rel.length===0) return false;
+  return rel.every(m=>isModelHidden(m.modelNo));
+}
+function visibleModels(){ return DB.models.filter(m=>!isModelHidden(m.modelNo)); }
 window.addEventListener('DOMContentLoaded',()=>{
   const va=document.getElementById('vendorAddBox'); if(va) va.style.display='none';
   const la=document.getElementById('locAddBox'); if(la) la.style.display='none';
@@ -685,7 +739,7 @@ function syncAll(){
     if(tab==='stock') renderStock();
     if(tab==='out') renderOut();
     if(tab==='txn') renderTxn();
-    if(tab==='materials') renderMaterials();
+    if(tab==='materials'){ switchMatTab('list'); renderMaterials(); }
     if(tab==='vendors') renderVendors();
     if(tab==='locations') renderLocations();
     if(tab==='bom') renderBom();
@@ -711,7 +765,7 @@ function go(tab){
   if(tab==='stock') renderStock();
   if(tab==='in'){ initModelSelect(); restoreLock(); }  if(tab==='out') renderOut();
   if(tab==='txn') renderTxn();
-  if(tab==='materials') renderMaterials();
+  if(tab==='materials'){ switchMatTab('list'); renderMaterials(); }
   if(tab==='vendors') renderVendors();
   if(tab==='locations') renderLocations();
   if(tab==='bom') renderBom();
@@ -747,7 +801,7 @@ function renderHome(){
 
   // 最近动态
   const todayKey=new Date().toDateString();
-  const recent=[...DB.txns].filter(t=>new Date(t.time).toDateString()===todayKey).sort((a,b)=>b.time-a.time).slice(0,20);
+  const recent=[...DB.txns].filter(t=>!isMatFullyHidden(t.matNo)).filter(t=>new Date(t.time).toDateString()===todayKey).sort((a,b)=>b.time-a.time).slice(0,20);
   $('#homeRecent').innerHTML = recent.length ? recent.map(t=>{
     const keep=(t.ref&&(t.ref.indexOf('手动盘点')===0||t.ref==='扫码批量出库'));
   const note=keep?` <span style="color:var(--brand);font-size:10px">${t.ref.replace('手动盘点 · ','')}</span>`:'';
@@ -791,7 +845,8 @@ function renderBomView(){
   const sel=$('#bomViewModel'); const qtyEl=$('#bomViewQty');
   if(!sel) return;
   const saved=DB.bomViewLock||{};
-  sel.innerHTML='<option value="">— 选择型号 —</option>'+DB.models.map(m=>`<option value="${m.modelNo}">${m.modelName}</option>`).join('');
+  sel.innerHTML='<option value="">— 选择型号 —</option>'+visibleModels().map(m=>`<option value="${m.modelNo}">${m.modelName}</option>`).join('');
+  if(saved.modelNo && isModelHidden(saved.modelNo)){ DB.bomViewLock={locked:false,modelNo:'',qty:0}; save(); }
   if(saved.modelNo) sel.value=saved.modelNo;
   if(saved.qty) qtyEl.value=saved.qty;
   const locked=!!saved.locked;
@@ -1015,7 +1070,8 @@ function addScanToList(silent){
   }
   const it=DB.items.find(i=>i.matNo===matNo);
   if(!it){
-    openNewItemModal({tagNo,vendorNo,po,matNo,qty});
+    alarm(`未找到物料 ${matNo}\n请在「我的 → 物料管理 → 新增物料」中先建档`);
+    $('#scanInput').value='';
     return;
   }
   // 已有物料入库：若标签带厂家编号且厂家名下还没记编号，自动补录映射
@@ -1095,6 +1151,7 @@ function toggleLock(){
   }
 }
 function restoreLock(){
+  if(DB.lockedModel && isModelHidden(DB.lockedModel)){ DB.lockedModel=''; save(); }
   modelLocked = !!(DB.lockedModel);
   if(modelLocked){
     $('#inModel').value = DB.lockedModel;
@@ -1112,7 +1169,7 @@ function onModelChange(){
 }
 function initModelSelect(){
   $('#inModel').innerHTML='<option value="">— 不选型号（不校验）—</option>'+
-    DB.models.map(m=>`<option value="${m.modelNo}">${m.modelName}</option>`).join('');
+    visibleModels().map(m=>`<option value="${m.modelNo}">${m.modelName}</option>`).join('');
 }
 
 function renderInList(){
@@ -1172,7 +1229,7 @@ function renderInRecent(){
 /* ===== 库存 ===== */
 function renderStock(){
   const kw=($('#searchInput').value||'').trim().toLowerCase();
-  let list=DB.items.filter(i=>!kw||i.matNo.toLowerCase().includes(kw)||i.matDesc.toLowerCase().includes(kw)||i.location.toLowerCase().includes(kw));
+  let list=DB.items.filter(i=>!isMatFullyHidden(i.matNo)).filter(i=>!kw||i.matNo.toLowerCase().includes(kw)||i.matDesc.toLowerCase().includes(kw)||i.location.toLowerCase().includes(kw));
   $('#stockCount').textContent=`共 ${list.length} 种物料`;
   $('#stockList').innerHTML=list.length?list.map(i=>{
     const low=i.stock<=i.warnAt;
@@ -1224,20 +1281,34 @@ function renderBom(){
           <span>${it.matDesc} <small style="color:var(--ink3)">${it.matNo}</small></span>
         </label>`).join('');
     }
-    const btns = edit ? `
+    const hidden=isModelHidden(m.modelNo);
+    const hideBtn=edit?`<button class="editbtn" style="margin-top:6px;background:${hidden?'#eef2f6':''};color:${hidden?'var(--ink2)':'var(--brand)'};" onclick="toggleModelVisible('${m.modelNo}')">${hidden?'显示型号':'隐藏型号'}</button>`:'';
+    const editBtns = edit ? `
       <button class="editbtn" onclick="editingModel=(editingModel==='${m.modelNo}'?null:'${m.modelNo}');renderBom()">${editingModel===m.modelNo?'完成':'编辑物料清单'}</button>
       <button class="editbtn" style="margin-top:6px;background:#eef2f6;color:var(--ink2)" onclick="editModelInfo('${m.modelNo}')">编辑型号名称/编号</button>
       <button class="delbtn" onclick="delModel('${m.modelNo}')">删除型号</button>` : '';
-    return `<div class="bom-card">
-      <h4>${m.modelName}</h4>
+    return `<div class="bom-card" style="${hidden?'opacity:.6':''}">
+      <h4>${m.modelName} ${hidden?'<span style="font-size:11px;color:var(--ink3);font-weight:400">（已隐藏）</span>':''}</h4>
       <div class="mn">${m.modelNo} · 含 ${m.items.length} 种物料</div>
-      ${editingModel===m.modelNo?body:`<div class="chips">${chips||'<span style="color:var(--ink3);font-size:12px">未配置物料</span>'}</div>`}
-      ${btns}
+      ${editingModel===m.modelNo&&edit?body:`<div class="chips">${chips||'<span style="color:var(--ink3);font-size:12px">未配置物料</span>'}</div>`}
+      <div>${hideBtn}${editBtns}</div>
     </div>`;
   }).join('') || '<div class="empty">还没有型号</div>';
 }
+function toggleModelVisible(modelNo){
+  if(!DB.bomEditMode){ toast('请先点"管理"进入编辑模式'); return; }
+  DB.hiddenModels=DB.hiddenModels||{};
+  if(DB.hiddenModels[modelNo]) delete DB.hiddenModels[modelNo];
+  else DB.hiddenModels[modelNo]=true;
+  save(); renderBom(); renderStock(); renderHome();
+  if(typeof initModelSelect==='function') initModelSelect();
+  if(typeof renderOutList==='function') renderOutList();
+  if(typeof renderBomView==='function') renderBomView();
+  toast(DB.hiddenModels[modelNo]?'已隐藏该型号及其独占物料':'已恢复显示');
+}
 /* ===== 系统设置 ===== */
 function openSettings(){
+  if(!DB.bomEditMode){ toast('请先点"管理"进入编辑模式'); return; }
   $('#selBeep').value=DB.soundBeep||'classic';
   $('#selAlarm').value=DB.soundAlarm||'continuous';
   $('#oldPwd').value=''; $('#newPwd').value=''; $('#newPwd2').value='';
@@ -1363,7 +1434,7 @@ function renderOutList(){
   // 初始化型号下拉（保留已选）
   const sel=$('#bomOutModel'); const cur=sel.value;
   sel.innerHTML='<option value="">— 选择型号 —</option>'+
-    DB.models.map(m=>`<option value="${m.modelNo}">${m.modelName}</option>`).join('');
+    visibleModels().map(m=>`<option value="${m.modelNo}">${m.modelName}</option>`).join('');
   if(cur) sel.value=cur;
   renderBomOutPreview();
   const box=$('#outPreview');
@@ -1589,6 +1660,149 @@ function renderMsList(){
 
 /* ===== 物料管理 ===== */
 let editingMat=null;
+function switchMatTab(which){
+  if((which==='new'||which==='upd') && !DB.bomEditMode){ toast('请先在"我的"点"管理"进入编辑模式'); return; }
+  $('#matListPane').style.display=which==='list'?'':'none';
+  $('#matNewPane').style.display=which==='new'?'':'none';
+  $('#matUpdPane').style.display=which==='upd'?'':'none';
+  const tabs={list:'#tabMatList',new:'#tabMatNew',upd:'#tabMatUpd'};
+  const on='background:var(--brand);color:#fff';
+  const off='background:#fff;color:var(--ink2);border:1px solid #e2e6ee';
+  Object.entries(tabs).forEach(([k,sel])=>{ $(sel).style.cssText = k===which?on:off; });
+  if(which==='new') fillNewForm();
+  if(which==='upd') renderUpdPicker();
+}
+let updMatNo=null;
+function renderUpdPicker(){
+  $('#updPicker').style.display='';
+  $('#updForm').style.display='none';
+  $('#updPicker').innerHTML=DB.items.map(it=>`
+    <div class="item" style="cursor:pointer" onclick="openUpdateForm('${it.matNo.replace(/'/g,"\\'")}')">
+      <div class="info">
+        <div class="name" style="font-size:14px">${it.matDesc}</div>
+        <div class="sub" style="font-size:11px">${it.matNo} · ${it.vendorName||'未设厂家'} · 库存 ${it.stock}</div>
+      </div>
+      <span style="color:var(--ink3)">›</span>
+    </div>`).join('')||'<div class="empty">暂无物料</div>';
+}
+function openUpdateForm(matNo){
+  const it=DB.items.find(x=>x.matNo===matNo); if(!it) return;
+  updMatNo=matNo;
+  $('#updPicker').style.display='none';
+  $('#updForm').style.display='';
+  $('#updMatNo').value=it.matNo;
+  $('#updMatDesc').value=it.matDesc;
+  $('#updVendor').value=it.vendorName||'';
+  $('#updVendorHint').textContent=it.vendorNo?`厂家编号：${it.vendorNo}`:'';
+  $('#updScanInput').value='';
+  const vl=document.getElementById('vendorList');
+  vl.innerHTML=(DB.vendors||[]).map(v=>`<option value="${v}">`).join('');
+  $('#updLocation').innerHTML=(DB.locations||[]).map(l=>`<option value="${l}" ${l===it.location?'selected':''}>${l}</option>`).join('');
+}
+function backToUpdPicker(){ renderUpdPicker(); }
+function parseUpdScan(){
+  const raw=$('#updScanInput').value.trim();
+  if(!raw){ toast('请先扫码'); return; }
+  const parts=raw.split('$').map(s=>s.trim());
+  let vendorNo=parts[1]||'', matNo=parts[3]||'';
+  if(parts.length<=1){ matNo=raw; vendorNo=''; }
+  if(matNo) $('#updMatNo').value=matNo; // 自动更新图号
+  DB.vendorCodeMap=DB.vendorCodeMap||{};
+  let autoVendor='';
+  if(vendorNo){
+    for(const [name,code] of Object.entries(DB.vendorCodeMap)){
+      if(String(code)===String(vendorNo)){ autoVendor=name; break; }
+    }
+  }
+  if(autoVendor) $('#updVendor').value=autoVendor;
+  $('#updVendorHint').textContent=vendorNo?`厂家编号：${vendorNo}${autoVendor?'（已匹配：'+autoVendor+'）':''}`:'';
+}
+function saveUpdateMaterial(){
+  if(!DB.bomEditMode){ toast('无权限'); return; }
+  const it=DB.items.find(x=>x.matNo===updMatNo); if(!it) return;
+  const newMatNo=$('#updMatNo').value.trim();
+  const desc=$('#updMatDesc').value.trim();
+  const vendor=$('#updVendor').value.trim();
+  const location=$('#updLocation').value;
+  if(!newMatNo){ toast('物料图号不能为空'); return; }
+  if(!desc){ toast('物料名称不能为空'); return; }
+  // 图号若改动，检查是否与其他物料冲突
+  if(newMatNo!==updMatNo && DB.items.find(x=>x.matNo===newMatNo)){ alert('物料图号 '+newMatNo+' 已存在，不能重复'); return; }
+  const m=$('#updVendorHint').textContent.match(/厂家编号：(\d+)/);
+  const vendorNo=m?m[1]:(it.vendorNo||'');
+  const msg=
+`请核对物料信息后确认保存：
+
+图号：${it.matNo}${newMatNo!==it.matNo?'  →  '+newMatNo:''}
+名称：${it.matDesc}${desc!==it.matDesc?'  →  '+desc:''}
+厂家：${it.vendorName||'（空）'}${vendor!==(it.vendorName||'')?'  →  '+vendor:''}
+厂家编号：${vendorNo||'（无）'}
+库位：${it.location||'（空）'}${location!==(it.location||'')?'  →  '+location:''}
+当前库存：${it.stock}`;
+  if(!confirm(msg+'\n\n确认保存？')) return;
+  // 图号变更：同步 BOM 与流水引用
+  if(newMatNo!==updMatNo){
+    DB.models.forEach(md=>{ const i=md.items.indexOf(updMatNo); if(i>=0) md.items[i]=newMatNo; });
+    DB.txns.forEach(t=>{ if(t.matNo===updMatNo) t.matNo=newMatNo; });
+    it.matNo=newMatNo; updMatNo=newMatNo;
+  }
+  it.matDesc=desc; it.vendorName=vendor; it.location=location; it.vendorNo=vendorNo;
+  if(vendorNo && vendor){ DB.vendorCodeMap[vendor]=vendorNo; if(!DB.vendors.includes(vendor)) DB.vendors.push(vendor); }
+  save(); alert('物料已更新'); renderUpdPicker();
+}
+function fillNewForm(){
+  const vl=document.getElementById('vendorList');
+  vl.innerHTML=(DB.vendors||[]).map(v=>`<option value="${v}">`).join('');
+  $('#nmLocation').innerHTML=(DB.locations||[]).map(l=>`<option value="${l}">${l}</option>`).join('');
+  $('#nmModelChecks').innerHTML=visibleModels().map((m,i)=>`
+    <label style="display:flex;gap:12px;align-items:center;background:#f2f4f8;border-radius:10px;padding:12px 14px;cursor:pointer">
+      <input type="checkbox" id="nmModel_${i}" style="width:18px;height:18px">
+      <span>
+        <span style="display:block;font-size:14px;font-weight:600">${m.modelName}</span>
+        <span style="display:block;font-size:11.5px;color:var(--ink3);margin-top:2px">· ${m.modelNo}</span>
+      </span>
+    </label>`).join('') || '<span style="font-size:12px;color:var(--ink3)">还没有型号，可先去型号BOM添加</span>';
+}
+function parseNewScan(){
+  const raw=$('#newScanInput').value.trim();
+  if(!raw){ toast('请先扫码'); return; }
+  const parts=raw.split('$').map(s=>s.trim());
+  let vendorNo=parts[1]||'', matNo=parts[3]||'';
+  if(parts.length<=1){ matNo=raw; vendorNo=''; }
+  $('#nmMatNo').value=matNo;
+  DB.vendorCodeMap=DB.vendorCodeMap||{};
+  let autoVendor='';
+  if(vendorNo){
+    for(const [name,code] of Object.entries(DB.vendorCodeMap)){
+      if(String(code)===String(vendorNo)){ autoVendor=name; break; }
+    }
+  }
+  $('#nmVendor').value=autoVendor;
+  $('#nmVendorHint').textContent=vendorNo?`厂家编号：${vendorNo}${autoVendor?'（已匹配：'+autoVendor+'）':'（未匹配，请选择/输入厂家）'}`:'';
+}
+function saveNewMaterial(){
+  if(!DB.bomEditMode){ toast('无权限，请先进入管理模式'); return; }
+  const matNo=$('#nmMatNo').value.trim();
+  const desc=$('#nmMatDesc').value.trim();
+  const vendor=$('#nmVendor').value.trim();
+  const location=$('#nmLocation').value;
+  if(!matNo){ toast('请输入/扫入物料图号'); return; }
+  if(!desc){ toast('请输入物料名称'); return; }
+  if(DB.items.find(i=>i.matNo===matNo)){ alert('该物料图号已存在：'+matNo); return; }
+  if(!DB.vendors.includes(vendor) && vendor) DB.vendors.push(vendor);
+  const vendorNo=$('#nmVendorHint').textContent.match(/\d+/);
+  if(vendorNo && vendor) DB.vendorCodeMap[vendor]=vendorNo[0];
+  DB.items.push({matNo,matDesc:desc,vendorName:vendor,location,unit:'PC',stock:0,warnAt:50,rohs:true});
+  // 关联型号（勾选列表只列显示型号）
+  visibleModels().forEach((m,i)=>{
+    const cb=document.getElementById('nmModel_'+i);
+    if(cb && cb.checked && !m.items.includes(matNo)) m.items.push(matNo);
+  });
+  save();
+  alert('物料已保存');
+  $('#nmMatNo').value='';$('#nmMatDesc').value='';$('#nmVendor').value='';$('#newScanInput').value='';$('#nmVendorHint').textContent='';
+  fillNewForm(); renderMaterials();
+}
 function renderMaterials(){
   let dl=document.getElementById('vendorListAdmin');
   if(!dl){ dl=document.createElement('datalist'); dl.id='vendorListAdmin'; document.body.appendChild(dl); }
@@ -1620,7 +1834,7 @@ function renderMaterials(){
       </div>`;
     }
     const canEdit=!!DB.bomEditMode;
-    return `<div class="item" style="cursor:pointer" onclick="${canEdit?`editingMat=${editingMat===idx?null:idx};renderMaterials()`:`toast('请先点右上角"管理"进入编辑模式')`}">
+    return `<div class="item" style="cursor:pointer" onclick="${canEdit?`editingMat=${editingMat===idx?null:idx};renderMaterials()`:`openDetail('${it.matNo.replace(/'/g,"\\'")}')`}">
       <div class="info">
         <div class="name">${it.matDesc}</div>
         <div class="sub" style="font-size:11px">${it.matNo} · ${it.vendorName||'未设厂家'}</div>
@@ -1796,7 +2010,7 @@ function openScanner(mode){
   }
   const sc=$('#scanner');
   sc.style.display='flex';
-  $('#scTitle').textContent = mode==='in'?'对准入库标签二维码':(mode==='out'?'对准物料二维码':'扫描物料码查询');
+  $('#scTitle').textContent = mode==='in'?'对准入库标签二维码':(mode==='out'?'对准物料二维码':(mode==='newmat'?'扫描完整标签新增物料':(mode==='updmat'?'扫描完整标签更新物料':'扫描物料码查询')));
   renderScList();
   navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false})
     .then(stream=>{
@@ -1808,20 +2022,24 @@ function openScanner(mode){
 }
 function renderScList(){
   const box=$('#scList'); if(!box) return;
-  if(scMode==='msearch'){ box.innerHTML=''; $('#scListTitle').textContent='扫码查询'; $('#scConfirmBtn').style.display='none'; return; }
+  if(scMode==='msearch'||scMode==='newmat'||scMode==='updmat'){ box.innerHTML=''; $('#scListTitle').textContent=scMode==='newmat'?'新增物料扫码':(scMode==='updmat'?'更新物料扫码':'扫码查询'); $('#scConfirmBtn').style.display='none'; return; }
   const list=scMode==='in'?pendingInList:pendingOutList;
   $('#scListTitle').textContent=scMode==='in'?`待入库清单 · ${list.length} 条`:`待出库清单 · ${list.length} 条`;
   $('#scConfirmBtn').style.display='';
   $('#scConfirmBtn').textContent=scMode==='in'?'确认入库':'确认出库';
-  box.innerHTML=list.length?list.map((r,i)=>`
-    <div class="item" style="background:#fff;border-radius:12px;margin-bottom:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
+  box.innerHTML=list.length?list.map((r,i)=>{
+    const it=DB.items.find(x=>x.matNo===r.matNo);
+    const stockTxt=scMode==='out'&&it?` · 库存 ${it.stock}`:'';
+    return `
+    <div style="background:#fff;border-radius:9px;margin-bottom:4px;padding:6px 10px;min-height:43px;display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:13px">${r.matDesc||r.matNo}</div>
-        <div style="font-size:11px;color:var(--ink3);font-family:ui-monospace,monospace">${r.matNo}</div>
+        <div style="font-weight:600;font-size:12px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.matDesc||r.matNo}</div>
+        <div style="font-size:10.5px;color:var(--ink3);font-family:ui-monospace,monospace;line-height:1.3">${r.matNo}${stockTxt}</div>
       </div>
-      <b style="color:${scMode==='in'?'var(--in)':'var(--out)'}">${scMode==='in'?'+':'-'}${r.qty}</b>
-      <button onclick="scRemove(${i})" style="border:none;background:none;color:var(--warn);font-size:12px;margin-left:8px;cursor:pointer">移除</button>
-    </div>`).join(''):'<div style="color:var(--ink3);font-size:13px;text-align:center;margin-top:30px">扫描到的物料会显示在这里</div>';
+      <b style="color:${scMode==='in'?'var(--in)':'var(--out)'};font-size:13.5px;white-space:nowrap">${scMode==='in'?'+':'-'}${r.qty}</b>
+      <button onclick="scRemove(${i})" style="border:none;background:none;color:var(--warn);font-size:11px;margin-left:4px;cursor:pointer;white-space:nowrap">移除</button>
+    </div>`;
+  }).join(''):'<div style="color:var(--ink3);font-size:13px;text-align:center;margin-top:30px">扫描到的物料会显示在这里</div>';
 }
 function scRemove(i){
   if(scMode==='in') pendingInList.splice(i,1);
@@ -1832,16 +2050,40 @@ function scConfirm(){
   if(scMode==='in'){ confirmBatchIn(); closeScanner(); }
   else if(scMode==='out'){ confirmBatchOut(); closeScanner(); }
 }
+function tryDecode(canvas){
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  return jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+}
 function scLoop(){
   const v=$('#scVideo');
   if(v.readyState===v.HAVE_ENOUGH_DATA && v.videoWidth>0){
-    const c=document.createElement('canvas');
-    c.width=v.videoWidth; c.height=v.videoHeight;
-    const ctx=c.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(v,0,0);
     try{
-      const img=ctx.getImageData(0,0,c.width,c.height);
-      const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
+      const wrap=v.parentElement.getBoundingClientRect();
+      const cw=wrap.width, ch=wrap.height;
+      const vw=v.videoWidth, vh=v.videoHeight;
+      // object-fit:cover 映射
+      const scale=Math.max(cw/vw, ch/vh);
+      const dispW=vw*scale, dispH=vh*scale;
+      const ox=(cw-dispW)/2, oy=(ch-dispH)/2;
+      // 聚焦区：画面中部 78% 宽、82% 高（覆盖扫码框附近，避免裁断二维码）
+      const fw=(0.78*cw)/scale, fh=(0.82*ch)/scale;
+      const cx=vw/2 - ox/scale, cy=vh/2 - oy/scale;
+      const sx=Math.max(0,cx-fw/2), sy=Math.max(0,cy-fh/2);
+      const sw=Math.min(vw-sx,fw), sh=Math.min(vh-sy,fh);
+      let code=null;
+      // 先聚焦区识别，失败再整帧兜底
+      const c=document.createElement('canvas');
+      c.width=Math.max(1,Math.floor(sw)); c.height=Math.max(1,Math.floor(sh));
+      const ctx=c.getContext('2d',{willReadFrequently:true});
+      ctx.drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
+      code=tryDecode(c);
+      if(!code){
+        const c2=document.createElement('canvas');
+        c2.width=vw; c2.height=vh;
+        c2.getContext('2d',{willReadFrequently:true}).drawImage(v,0,0);
+        code=tryDecode(c2);
+      }
       if(code && code.data){
         const now=Date.now();
         if(code.data!==lastCode || now-lastHitAt>1500){
@@ -1854,6 +2096,12 @@ function scLoop(){
             const parts=code.data.split('$'); const no=parts.length>=4?parts[3]:code.data;
             const it=DB.items.find(i=>i.matNo===no);
             if(it){ closeScanner(); openDetail(no); } else { alarm('未找到物料：'+no); }
+          }
+          else if(scMode==='newmat'){
+            $('#newScanInput').value=code.data; closeScanner(); parseNewScan(); okFlash();
+          }
+          else if(scMode==='updmat'){
+            $('#updScanInput').value=code.data; closeScanner(); parseUpdScan(); okFlash();
           }
         }
       }
