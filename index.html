@@ -104,7 +104,7 @@ body.alarm #scanner{background:#7a1010}
 .field{margin-bottom:12px}
 .field label{display:block;font-size:12px;color:var(--ink2);margin-bottom:6px;font-weight:500}
 .field input,.field select,.field textarea{
-  width:100%;border:1.5px solid var(--line);border-radius:10px;padding:11px 12px;font-size:15px;
+  width:100%;border:1.5px solid var(--line);border-radius:10px;padding:12px;font-size:16px;
   font-family:inherit;background:#fafbfc;color:var(--ink);outline:none;transition:border .15s;
 }
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand);background:#fff}
@@ -126,7 +126,7 @@ body.alarm #scanner{background:#7a1010}
 /* 扫码输入区 */
 .scan-box{background:#1c2733;border-radius:14px;padding:16px;color:#fff}
 .scan-box .scan-title{font-size:13px;opacity:.8;margin-bottom:10px;display:flex;align-items:center;gap:6px}
-.scan-box textarea{width:100%;background:rgba(255,255,255,.08);border:1px dashed rgba(255,255,255,.3);border-radius:10px;color:#fff;padding:10px;font-size:13px;font-family:ui-monospace,monospace;min-height:64px;outline:none;resize:vertical}
+.scan-box textarea{width:100%;background:rgba(255,255,255,.08);border:1px dashed rgba(255,255,255,.3);border-radius:10px;color:#fff;padding:10px;font-size:16px;font-family:ui-monospace,monospace;min-height:64px;outline:none;resize:vertical}
 .scan-box textarea::placeholder{color:rgba(255,255,255,.4)}
 .scan-actions{display:flex;gap:8px;margin-top:10px}
 .scan-actions button{flex:1;border:none;border-radius:9px;padding:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
@@ -170,7 +170,7 @@ body.alarm #scanner{background:#7a1010}
 /* 搜索 */
 .search{display:flex;align-items:center;gap:8px;background:#fff;border-radius:12px;padding:10px 12px;box-shadow:0 2px 8px rgba(20,40,60,.05)}
 .search svg{width:18px;height:18px;color:var(--ink3);flex:none}
-.search input{border:none;outline:none;flex:1;font-size:14px;font-family:inherit;background:transparent}
+.search input{border:none;outline:none;flex:1;font-size:16px;font-family:inherit;background:transparent}
 
 /* ===== 底部 Tab ===== */
 .tabbar{
@@ -196,6 +196,13 @@ body.alarm #scanner{background:#7a1010}
   padding:10px 18px;border-radius:24px;font-size:13px;z-index:99;opacity:0;pointer-events:none;transition:opacity .2s;white-space:nowrap;
 }
 #toast.show{opacity:1}
+
+/* ===== 移动端适配：iOS 防聚焦放大 + 触控优化 ===== */
+input,select,textarea{font-size:16px;-webkit-text-size-adjust:100%}
+button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.btn{min-height:48px;display:flex;align-items:center;justify-content:center}
+select{appearance:auto;-webkit-appearance:auto}
+@media (max-width:360px){ body{font-size:14px} }
 </style>
 </head>
 <body>
@@ -204,7 +211,7 @@ body.alarm #scanner{background:#7a1010}
   <!-- ============ 视图：首页看板 ============ -->
   <section class="view active" id="view-home">
     <div class="topbar">
-      <h1>云仓进销存</h1>
+      <h1 id="appTitle">云仓进销存</h1>
       <div class="date" id="todayStr"></div>
     </div>
     <div class="stats">
@@ -219,10 +226,10 @@ body.alarm #scanner{background:#7a1010}
     <div class="section-title">关联型号 BOM 库存</div>
     <div class="card">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <select id="bomViewModel" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px">
+        <select id="bomViewModel" style="flex:1;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:16px">
           <option value="">— 选择型号 —</option>
         </select>
-        <input id="bomViewQty" type="number" placeholder="套数" style="width:70px;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px;text-align:center">
+        <input id="bomViewQty" type="number" placeholder="套数" style="width:76px;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:16px;text-align:center">
         <button id="bomViewLockBtn" onclick="toggleBomViewLock()" style="border:none;padding:9px 14px;border-radius:10px;background:#eef2f6;color:var(--ink2);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">锁定</button>
       </div>
       <div id="bomViewList"></div>
@@ -632,6 +639,11 @@ body.alarm #scanner{background:#7a1010}
       <button class="btn btn-primary" style="margin-top:10px" onclick="savePwd()">保存密码</button>
     </div>
     <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
+      <label style="font-size:13px;font-weight:600">系统名称（显示在看板标题和浏览器标签）</label>
+      <input id="appNameInput" placeholder="如：云仓进销存" style="margin-top:6px">
+      <button class="btn btn-primary" style="margin-top:10px" onclick="saveAppName()">保存名称</button>
+    </div>
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
       <label style="font-size:13px;font-weight:600">扫码成功提示音</label>
       <select id="selBeep" onchange="previewBeep(this.value)" style="margin-top:6px">
         <option value="classic">经典短滴（1250Hz 单音）</option>
@@ -748,6 +760,7 @@ function syncAll(){
   } finally { _syncing=false; }
 }
 save();
+applyAppName();
 
 /* ===== 工具 ===== */
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1600); }
@@ -1312,7 +1325,19 @@ function openSettings(){
   $('#selBeep').value=DB.soundBeep||'classic';
   $('#selAlarm').value=DB.soundAlarm||'continuous';
   $('#oldPwd').value=''; $('#newPwd').value=''; $('#newPwd2').value='';
+  $('#appNameInput').value=DB.appName||'云仓进销存';
   $('#settingsModal').style.display='block';
+}
+function applyAppName(){
+  const name=(DB.appName||'云仓进销存').trim()||'云仓进销存';
+  const h=$('#appTitle'); if(h) h.textContent=name;
+  document.title=name+' · 手机版';
+}
+function saveAppName(){
+  const name=$('#appNameInput').value.trim();
+  if(!name){ alert('名称不能为空'); return; }
+  DB.appName=name; save(); applyAppName();
+  alert('系统名称已改为：'+name);
 }
 function closeSettings(){ $('#settingsModal').style.display='none'; }
 function savePwd(){
